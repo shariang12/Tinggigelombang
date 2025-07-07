@@ -1,81 +1,109 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Info Gelombang Otomatis</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Info Cuaca Laut Real-Time</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-    header { background-color: #007166; color: white; padding: 15px; text-align: center; }
-    #result { padding: 20px; text-align: center; }
-    #map { height: 400px; }
-    .error { color: red; font-weight: bold; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #e6f8f7;
+      padding: 30px;
+      font-size: 18px;
+      color: #222;
+    }
+    .box {
+      max-width: 500px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 25px;
+      border-radius: 10px;
+      box-shadow: 0 0 12px rgba(0,0,0,0.1);
+    }
+    .bold {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
 
-<header>
-  <h2>🌊 Tinggi Gelombang Berdasarkan Lokasi</h2>
-  <p>Izinkan lokasi Anda agar data bisa muncul</p>
-</header>
+<div class="box" id="output">
+  Memuat data cuaca laut...
+</div>
 
-<div id="result">🔄 Menunggu izin lokasi...</div>
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-  const result = document.getElementById("result");
+  const output = document.getElementById("output");
 
-  function tampilkanError(msg) {
-    result.innerHTML = `<div class="error">⚠️ ${msg}</div>`;
+  // Fungsi mengubah arah angin dari derajat ke arah mata angin
+  function arahAnginDerajat(derajat) {
+    if (derajat >= 337.5 || derajat < 22.5) return "Utara";
+    if (derajat < 67.5) return "Timur Laut";
+    if (derajat < 112.5) return "Timur";
+    if (derajat < 157.5) return "Tenggara";
+    if (derajat < 202.5) return "Selatan";
+    if (derajat < 247.5) return "Barat Daya";
+    if (derajat < 292.5) return "Barat";
+    return "Barat Laut";
   }
 
-  if ("geolocation" in navigator) {
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
+  // Ambil lokasi GPS
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(async function(pos) {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
 
-        // Tampilkan peta
-        const map = L.map('map').setView([lat, lon], 9);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap'
-        }).addTo(map);
-        L.marker([lat, lon]).addTo(map).bindPopup("Lokasi Anda").openPopup();
+      try {
+        // 1. Ambil nama lokasi dari Nominatim (OpenStreetMap)
+        const lokasiRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+        const lokasiData = await lokasiRes.json();
+        const kecamatan = lokasiData.address.suburb || lokasiData.address.village || lokasiData.address.town || lokasiData.address.city || lokasiData.display_name;
 
-        // Ambil data dari Open-Meteo API
-        try {
-          const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&hourly=wave_height,wind_speed_10m,wind_direction_10m&timezone=auto`;
-          const res = await fetch(url);
-          const data = await res.json();
+        // 2. Ambil cuaca dari Open-Meteo
+        const cuacaRes = await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&hourly=wave_height,wind_speed_10m,wind_direction_10m&current_weather=true&timezone=auto`);
+        const cuacaData = await cuacaRes.json();
 
-          const wave = data.hourly.wave_height[0];
-          const wind = data.hourly.wind_speed_10m[0];
-          const dir = data.hourly.wind_direction_10m[0];
-          const time = data.hourly.time[0];
+        // Cuaca
+        const kode = cuacaData.current_weather.weathercode;
+        const suhu = cuacaData.current_weather.temperature;
+        let kondisi = "tidak diketahui";
+        if (kode === 0) kondisi = "cerah";
+        else if (kode <= 3) kondisi = "berawan";
+        else if (kode <= 48) kondisi = "mendung";
+        else if (kode <= 67) kondisi = "hujan";
+        else kondisi = "badai";
 
-          result.innerHTML = `
-            🌍 Lokasi: <b>${lat.toFixed(2)}, ${lon.toFixed(2)}</b><br>
-            🌊 Tinggi Gelombang: <b>${wave} m</b><br>
-            💨 Kecepatan Angin: <b>${wind} m/s</b><br>
-            🧭 Arah Angin: <b>${dir}°</b><br>
-            ⏰ Waktu Data: ${time}
-          `;
-        } catch (e) {
-          tampilkanError("Gagal mengambil data dari server.");
-        }
-      },
-      (error) => {
-        let msg = "Gagal mengakses lokasi.";
-        if (error.code === 1) msg = "Izin lokasi ditolak.";
-        if (error.code === 2) msg = "Lokasi tidak tersedia.";
-        if (error.code === 3) msg = "Permintaan lokasi timeout.";
-        tampilkanError(msg);
+        // Angin
+        const anginMps = cuacaData.hourly.wind_speed_10m[0];
+        const anginKmph = (anginMps * 3.6).toFixed(1);
+        let kategoriAngin = "tenang";
+        if (anginMps >= 1 && anginMps < 3) kategoriAngin = "lembut";
+        else if (anginMps >= 3 && anginMps < 6) kategoriAngin = "ringan";
+        else if (anginMps >= 6) kategoriAngin = "kencang";
+
+        // Ombak
+        const ombak = cuacaData.hourly.wave_height[0];
+        let kategoriOmbak = "sangat rendah";
+        if (ombak >= 0.2 && ombak < 0.5) kategoriOmbak = "rendah";
+        else if (ombak >= 0.5 && ombak < 1.25) kategoriOmbak = "sedang";
+        else if (ombak >= 1.25) kategoriOmbak = "tinggi";
+
+        // Tampilkan hasil
+        output.innerHTML = `
+          <div><span class="bold">Lokasi:</span> ${kecamatan}</div>
+          <div><span class="bold">Cuaca:</span> ${kondisi} (${suhu}°C)</div>
+          <div><span class="bold">Angin:</span> ${anginKmph} km/jam ${kategoriAngin}</div>
+          <div><span class="bold">Ketinggian Ombak:</span> ${kategoriOmbak} ${ombak} m</div>
+        `;
+
+      } catch (err) {
+        output.innerHTML = "❌ Gagal memuat data cuaca laut.";
       }
-    );
+
+    }, function(error) {
+      output.innerHTML = "❌ Izin lokasi ditolak.";
+    });
   } else {
-    tampilkanError("Perangkat tidak mendukung GPS.");
+    output.innerHTML = "❌ Perangkat tidak mendukung GPS.";
   }
 </script>
 
