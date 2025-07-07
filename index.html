@@ -1,83 +1,81 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tinggi Gelombang dan Cuaca Laut</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Info Gelombang Otomatis</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <style>
-    body {
-      font-family: 'Arial', sans-serif;
-      margin: 0;
-      padding: 0;
-    }
-    header {
-      background-color: #007166;
-      color: white;
-      padding: 15px;
-      text-align: center;
-    }
-    #result {
-      padding: 20px;
-      font-size: 16px;
-      text-align: center;
-    }
-    #map {
-      height: 400px;
-    }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    header { background-color: #007166; color: white; padding: 15px; text-align: center; }
+    #result { padding: 20px; text-align: center; }
+    #map { height: 400px; }
+    .error { color: red; font-weight: bold; }
   </style>
 </head>
 <body>
 
 <header>
-  <h2>🌊 Info Tinggi Gelombang & Arah Angin</h2>
-  <p>Data otomatis berdasarkan lokasi Anda</p>
+  <h2>🌊 Tinggi Gelombang Berdasarkan Lokasi</h2>
+  <p>Izinkan lokasi Anda agar data bisa muncul</p>
 </header>
 
-<div id="result">Memuat data cuaca laut...</div>
+<div id="result">🔄 Menunggu izin lokasi...</div>
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(async function(pos) {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
+  const result = document.getElementById("result");
 
-      // Tampilkan peta
-      const map = L.map('map').setView([lat, lon], 9);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-      }).addTo(map);
-      const marker = L.marker([lat, lon]).addTo(map).bindPopup("Lokasi Anda").openPopup();
+  function tampilkanError(msg) {
+    result.innerHTML = `<div class="error">⚠️ ${msg}</div>`;
+  }
 
-      // Ambil data dari Open-Meteo API
-      const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&hourly=wave_height,wind_speed_10m,wind_direction_10m&timezone=auto`;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
+  if ("geolocation" in navigator) {
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
 
-        const wave = data.hourly.wave_height[0];
-        const windSpeed = data.hourly.wind_speed_10m[0];
-        const windDir = data.hourly.wind_direction_10m[0];
-        const time = data.hourly.time[0];
+        // Tampilkan peta
+        const map = L.map('map').setView([lat, lon], 9);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+        L.marker([lat, lon]).addTo(map).bindPopup("Lokasi Anda").openPopup();
 
-        document.getElementById("result").innerHTML = `
-          🌍 Lokasi: <b>${lat.toFixed(2)}, ${lon.toFixed(2)}</b><br>
-          🌊 Tinggi Gelombang: <b>${wave} meter</b><br>
-          💨 Kecepatan Angin: <b>${windSpeed} m/s</b><br>
-          🧭 Arah Angin: <b>${windDir}°</b><br>
-          ⏰ Waktu Data: ${time}
-        `;
-      } catch (e) {
-        document.getElementById("result").innerText = "Gagal memuat data cuaca laut.";
+        // Ambil data dari Open-Meteo API
+        try {
+          const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&hourly=wave_height,wind_speed_10m,wind_direction_10m&timezone=auto`;
+          const res = await fetch(url);
+          const data = await res.json();
+
+          const wave = data.hourly.wave_height[0];
+          const wind = data.hourly.wind_speed_10m[0];
+          const dir = data.hourly.wind_direction_10m[0];
+          const time = data.hourly.time[0];
+
+          result.innerHTML = `
+            🌍 Lokasi: <b>${lat.toFixed(2)}, ${lon.toFixed(2)}</b><br>
+            🌊 Tinggi Gelombang: <b>${wave} m</b><br>
+            💨 Kecepatan Angin: <b>${wind} m/s</b><br>
+            🧭 Arah Angin: <b>${dir}°</b><br>
+            ⏰ Waktu Data: ${time}
+          `;
+        } catch (e) {
+          tampilkanError("Gagal mengambil data dari server.");
+        }
+      },
+      (error) => {
+        let msg = "Gagal mengakses lokasi.";
+        if (error.code === 1) msg = "Izin lokasi ditolak.";
+        if (error.code === 2) msg = "Lokasi tidak tersedia.";
+        if (error.code === 3) msg = "Permintaan lokasi timeout.";
+        tampilkanError(msg);
       }
-
-    }, function(error) {
-      document.getElementById("result").innerText = "Izin lokasi ditolak.";
-    });
+    );
   } else {
-    document.getElementById("result").innerText = "Browser tidak mendukung geolokasi.";
+    tampilkanError("Perangkat tidak mendukung GPS.");
   }
 </script>
 
